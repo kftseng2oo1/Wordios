@@ -1,4 +1,4 @@
-# WordiOS v2.2 · 文件轉 Markdown
+# WordiOS v2.3 · 文件轉 Markdown
 
 在 iPhone / 瀏覽器上把 Word、Excel、PPT、PDF 轉成乾淨的 Markdown。
 一般轉檔**全部在瀏覽器端處理，檔案不會上傳**；只有掃描檔、照片才會經由 arcar Worker 送給 Claude 做 AI 辨識。
@@ -34,6 +34,12 @@ manifest.json + PNG 圖示（iOS 主畫面用 apple-touch-icon.png）
 - 預設呼叫 `https://arcar.kftseng2oo1.workers.dev/v1/messages`，模型 `claude-sonnet-5-5`，可在「選項」修改
 - arcar 直接轉送到 Anthropic Messages API，**Worker 不需要修改**
 - 觸發時機：PDF 幾乎沒有文字層（自動）、選項勾「PDF 一律用 AI 辨識」、選擇圖片檔
+
+## Windows / Android 整合（Edge、Chrome 安裝後）
+
+- **右鍵「以 WordiOS 開啟」**：manifest `file_handlers`，支援 docx / xlsx / xls / csv / ods / pptx / pdf，檔案經 `launchQueue` 送進 App
+- **「分享到 WordiOS」**：manifest `share_target`，Service Worker 攔下 `POST ./share-target`，把檔案暫存在 Cache Storage 後轉到 `index.html?share=1` 處理
+- iOS Safari 不支援以上兩項，iPhone 請從「檔案」App 存檔後再選取
 
 ## iOS 細節
 

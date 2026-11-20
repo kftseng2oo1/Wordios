@@ -163,7 +163,7 @@
 <div id="preview" class="preview" hidden></div>
 <div class="meta"><span id="countInfo"></span><span id="engineInfo"></span></div>
 
-<footer>WordiOS v2.2 · 一般轉檔全在瀏覽器端處理，AI 辨識經由 arcar Worker<br>舊版 .doc / .ppt 請先另存為 .docx / .pptx</footer>
+<footer>WordiOS v2.3 · 一般轉檔全在瀏覽器端處理，AI 辨識經由 arcar Worker<br>舊版 .doc / .ppt 請先另存為 .docx / .pptx</footer>
 <div id="toast" class="toast"></div>
 
 <script>
@@ -935,6 +935,35 @@ $("preloadBtn").onclick = async () => {
     info.textContent = "✅ 已可離線轉檔（中文 PDF 字型對照表仍需連網）";
   } catch { info.textContent = "下載失敗，請檢查網路"; }
 };
+
+/* --- 從系統開啟：Windows 右鍵「以 WordiOS 開啟」（file_handlers） --- */
+if ("launchQueue" in window) {
+  window.launchQueue.setConsumer(async (params) => {
+    if (!params.files || !params.files.length) return;
+    try { addFiles(await Promise.all(params.files.map((h) => h.getFile()))); }
+    catch (e) { toast("無法讀取開啟的檔案"); }
+  });
+}
+/* --- 分享進來：Service Worker 先把檔案放在暫存區（share_target） --- */
+async function takeShared() {
+  if (!/[?&]share=1/.test(location.search) || !("caches" in window)) return;
+  history.replaceState(null, "", location.pathname);
+  try {
+    const c = await caches.open("wordios-share");
+    const files = [];
+    let text = "";
+    for (const req of await c.keys()) {
+      const res = await c.match(req);
+      if (req.url.endsWith("/__share/text")) text = await res.text();
+      else files.push(new File([await res.blob()], decodeURIComponent(res.headers.get("x-name") || "shared"), { type: res.headers.get("content-type") || "" }));
+      await c.delete(req);
+    }
+    if (files.length) await addFiles(files);
+    else if (text) addPasted("", text);
+    else toast("沒有收到分享的檔案");
+  } catch (e) { toast("讀取分享內容失敗"); }
+}
+takeShared();
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(() => {}));
