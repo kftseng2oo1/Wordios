@@ -165,7 +165,7 @@
 <div id="preview" class="preview" hidden></div>
 <div class="meta"><span id="countInfo"></span><span id="engineInfo"></span></div>
 
-<footer>WordiOS v2.4 · 一般轉檔全在瀏覽器端處理，AI 辨識經由 arcar Worker<br>舊版 .doc / .ppt 請先另存為 .docx / .pptx</footer>
+<footer>WordiOS v2.4.1 · 一般轉檔全在瀏覽器端處理，AI 辨識經由 arcar Worker<br>舊版 .doc / .ppt 請先另存為 .docx / .pptx</footer>
 <div id="toast" class="toast"></div>
 
 <script>
@@ -1015,7 +1015,7 @@ async function saveBlob(blob, filename) {
     for (const type of [blob.type, "text/plain", "application/octet-stream"]) {
       const f = new File([blob], filename, { type });
       if (navigator.canShare({ files: [f] })) {
-        try { await navigator.share({ files: [f], title: filename }); return; }
+        try { await navigator.share({ files: [f] }); return; }   // 只傳檔案：多帶 title 或 text，iOS 會當成第 2 個項目，存檔時就不能改檔名
         catch (e) { if (e.name === "AbortError") return; break; }
       }
     }
