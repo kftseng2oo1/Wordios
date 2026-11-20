@@ -75,11 +75,16 @@
   .status.err { color: var(--err); }
   .status.warn { color: var(--warn); }
   textarea, .preview {
-    width: 100%; min-height: 52vh; margin-top: 10px; background: var(--panel); color: var(--text);
+    width: 100%; min-height: 40vh; margin-top: 10px; background: var(--panel); color: var(--text);
     border: 1px solid var(--border); border-radius: 12px; padding: 14px; line-height: 1.6;
   }
   /* iOS：輸入元件字體 >= 16px 才不會自動放大畫面 */
-  textarea { font: 16px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; resize: vertical; }
+  textarea { font: 16px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; resize: none; overflow: hidden; display: block; }
+  /* 工具列固定在頂端，長文件捲動時按鈕不會跑掉 */
+  .bar { position: sticky; top: env(safe-area-inset-top); z-index: 5; background: var(--bg);
+    margin: 0 -14px; padding: 2px 14px 8px; border-bottom: 1px solid transparent; }
+  .bar.stuck { border-bottom-color: var(--border); box-shadow: 0 6px 12px -8px #000; }
+  .bar::before { content: ""; position: absolute; left: 0; right: 0; bottom: 100%; height: env(safe-area-inset-top); background: var(--bg); }
   .preview { overflow-x: auto; font-size: 1rem; }
   .preview :first-child { margin-top: 0; }
   .preview h1, .preview h2, .preview h3 { border-bottom: 1px solid var(--border); padding-bottom: .25em; }
@@ -121,6 +126,7 @@
   <label class="opt"><span>PDF 一律用 AI 辨識<small>版面複雜、表格多、文字層亂碼時用</small></span><input type="checkbox" data-opt="forceOcr" /></label>
   <label class="field">API 網址<input type="url" data-opt="aiUrl" autocapitalize="off" autocomplete="off" spellcheck="false" /></label>
   <label class="field">模型<input type="text" data-opt="aiModel" autocapitalize="off" autocomplete="off" spellcheck="false" /></label>
+  <div class="row"><button id="ocrCacheBtn" type="button">清除 AI 辨識快取</button><span id="ocrCacheInfo" class="status" style="margin:0"></span></div>
   <div class="row"><button id="preloadBtn" type="button">下載離線轉檔元件</button><span id="preloadInfo" class="status" style="margin:0"></span></div>
 </section>
 
@@ -132,11 +138,14 @@
   accept=".docx,.xlsx,.xls,.xlsm,.csv,.ods,.pptx,.pdf,.html,.htm,.txt,.md,.doc,.ppt,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/pdf,text/csv,text/html,text/plain,text/markdown,application/msword,application/vnd.ms-powerpoint,application/vnd.oasis.opendocument.spreadsheet,image/*,.jpg,.jpeg,.png,.webp,.heic,.heif" />
 
 <div class="row">
+  <label id="addBtn" class="btn" for="fileInput" hidden>＋ 加入檔案</label>
   <button id="pasteBtn" type="button">📋 從剪貼簿貼上轉換</button>
 </div>
 
 <div id="files" class="files"></div>
 
+<div id="barSentinel"></div>
+<div id="bar" class="bar">
 <div class="row">
   <div class="seg" role="tablist">
     <button id="srcBtn" class="on" type="button">原始碼</button>
@@ -148,12 +157,13 @@
   <button id="clearBtn" type="button" hidden>清除</button>
 </div>
 <div id="status" class="status">就緒。選擇檔案，或從 Word / 網頁複製內容後按「貼上轉換」。</div>
+</div>
 
 <textarea id="editor" spellcheck="false" autocapitalize="off" autocomplete="off" placeholder="轉換後的 Markdown 會顯示在這裡，可直接編輯…"></textarea>
 <div id="preview" class="preview" hidden></div>
 <div class="meta"><span id="countInfo"></span><span id="engineInfo"></span></div>
 
-<footer>WordiOS v2.1 · 一般轉檔全在瀏覽器端處理，AI 辨識經由 arcar Worker<br>舊版 .doc / .ppt 請先另存為 .docx / .pptx</footer>
+<footer>WordiOS v2.2 · 一般轉檔全在瀏覽器端處理，AI 辨識經由 arcar Worker<br>舊版 .doc / .ppt 請先另存為 .docx / .pptx</footer>
 <div id="toast" class="toast"></div>
 
 <script>
@@ -433,6 +443,9 @@ const fixRadicals = (s) => s.replace(/[\u2E80-\u2FDF]/g, (c) => RADICAL_MAP[c] |
 
 /* --- PDF：pdf.js 抽文字，依字級判斷標題、依行距判斷段落 --- */
 async function convertPdf(buf, onProgress) {
+  const key = await ocrKey(buf);          // 必須在 pdf.js 接手前算（它會把 buffer 轉移走）
+  const hit = await cacheGet(key);
+  if (hit && (opts.forceOcr || hit.scanned)) return fromCache(hit);
   await need("pdfjs");
   pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_BASE + "build/pdf.worker.min.js";
   const pdf = await pdfjsLib.getDocument({
@@ -440,7 +453,7 @@ async function convertPdf(buf, onProgress) {
     cMapUrl: PDFJS_BASE + "cmaps/", cMapPacked: true,       // 中文 PDF 需要 CMap
     standardFontDataUrl: PDFJS_BASE + "standard_fonts/",
   }).promise;
-  if (opts.forceOcr) return ocrPdf(pdf, onProgress);
+  if (opts.forceOcr) { const r = await ocrPdf(pdf, onProgress); cachePut(key, { ...r, scanned: false }); return r; }
   const pages = [];
   const sizeCount = new Map();
   for (let i = 1; i <= pdf.numPages; i++) {
@@ -533,7 +546,7 @@ async function convertPdf(buf, onProgress) {
     flush();
   });
   if (chars < Math.max(20, pdf.numPages * 10)) {   // 幾乎沒文字 = 掃描檔
-    if (opts.autoOcr) return ocrPdf(pdf, onProgress, "這是掃描型 PDF，已改用 AI 辨識");
+    if (opts.autoOcr) { const r = await ocrPdf(pdf, onProgress, "這是掃描型 PDF，已改用 AI 辨識"); cachePut(key, { ...r, scanned: true }); return r; }
     throw new Error("這份 PDF 沒有文字層（掃描圖檔）。可在選項開啟「掃描型 PDF 自動用 AI 辨識」");
   }
   return { md: tidy(out.join("\n\n")), engine: `pdf.js · ${pdf.numPages} 頁`, warn: "PDF 版面為推測重建，多欄排版或表格可能需要手動調整" };
@@ -542,13 +555,67 @@ async function convertPdf(buf, onProgress) {
 /* ===================== AI 辨識（Claude Vision，經由 arcar /v1/messages） ===================== */
 const OCR_MAX_EDGE = 1568;          // Claude 視覺的最佳解析度上限，再大也會被縮
 const OCR_PAGES_PER_CALL = 4;
+const OCR_VER = "ocr-2";            // 改提示詞時一併改版本，舊快取就不會被沿用
+const OCR_CONCURRENCY = 2;
 const OCR_PROMPT = `你是精準的文件轉錄器。請把圖片中的文件內容「完整、逐字」轉成 Markdown：
 - 依視覺層級使用 # / ## / ### 標題
-- 清單用 - 或 1.，表格用 GFM 表格（| a | b |），合併儲存格就重複或留空
+- 每個段落寫成一行；不同段落、以及一行一項的欄位（例如「速別：」「附件：」）之間，一律空一行
+- 原文自己就有編號（一、 (一) 1. ① 甲、等）時照原樣保留，不要在前面再加「- 」，也不要改成 Markdown 編號清單；只有原文是項目符號（• ● ▪）時才用「- 」
+- 公文的「主旨」「說明」「辦法」「擬辦」「批示」等段名寫成「## 主旨」這樣的標題，內容放在下一段
+- 表格用 GFM 表格（| a | b |），合併儲存格就重複或留空
 - 保留原文語言與用字（繁體就繁體），不要翻譯、不要摘要、不要補充說明
 - 省略頁首、頁尾、頁碼與浮水印
 - 看不清楚的字用 [?] 標示
 - 只輸出 Markdown 本身，不要用 \`\`\` 包起來，不要加前言或結語`;
+
+/* AI 輸出保險整理：拿掉多餘的「- 」、相鄰的獨立行之間補空行（避免預覽時黏成一段） */
+const OWN_NUMBER = /^(\s*)[-*+]\s+(?=[（(][一二三四五六七八九十百\d]+[)）]|[一二三四五六七八九十百]+、|\d+[、.．]|[①-⑳]|[甲乙丙丁戊己庚辛壬癸]、)/;
+function ocrTidy(text) {
+  const kind = (l) => !l.trim() ? "blank" : /^\s*([-*+]\s|\d+[.)]\s)/.test(l) ? "list" : /^\s*\|/.test(l) ? "table"
+    : /^#/.test(l) ? "head" : /^>/.test(l) ? "quote" : /^<!--/.test(l) ? "html" : "plain";
+  const out = [];
+  let fence = false, prev = "blank";
+  for (let line of text.split("\n")) {
+    if (/^\s*```/.test(line)) { if (!fence && prev !== "blank") out.push(""); fence = !fence; out.push(line); prev = fence ? "fence" : "plain"; continue; }
+    if (fence) { out.push(line); continue; }
+    line = line.replace(OWN_NUMBER, "$1");
+    const k = kind(line);
+    // 同類的清單、表格、引言可以連著；其他情況（段落接段落、類型切換、標題前後）都補空行
+    if (k !== "blank" && prev !== "blank" && (k !== prev || k === "plain" || k === "head")) out.push("");
+    out.push(line);
+    prev = k;
+  }
+  return out.join("\n");
+}
+
+/* 辨識結果快取（IndexedDB）：同一個檔案 + 同模型 + 同提示詞版本，不再重複計費 */
+let idbP;
+function idb() {
+  return idbP ||= new Promise((ok, fail) => {
+    const r = indexedDB.open("wordios", 1);
+    r.onupgradeneeded = () => r.result.createObjectStore("ocr");
+    r.onsuccess = () => ok(r.result);
+    r.onerror = () => fail(r.error);
+  });
+}
+async function cacheOp(mode, fn) {
+  try {
+    const db = await idb();
+    return await new Promise((ok) => {
+      const req = fn(db.transaction("ocr", mode).objectStore("ocr"));
+      req.onsuccess = () => ok(req.result); req.onerror = () => ok(null);
+    });
+  } catch { return null; }
+}
+const cacheGet = (k) => k ? cacheOp("readonly", (st) => st.get(k)) : null;
+const cachePut = (k, v) => k && cacheOp("readwrite", (st) => st.put(Object.assign({ t: Date.now() }, v), k));
+async function ocrKey(buf) {
+  try {
+    const h = new Uint8Array(await crypto.subtle.digest("SHA-256", buf));
+    return `${OCR_VER}|${opts.aiModel || AI_DEFAULT.aiModel}|` + Array.from(h, (x) => x.toString(16).padStart(2, "0")).join("");
+  } catch { return null; }
+}
+const fromCache = (hit) => ({ md: hit.md, engine: hit.engine + " · 快取", warn: "沿用先前的辨識結果（未重新計費）；" + hit.warn });
 
 function canvasToJpeg(canvas) {
   const url = canvas.toDataURL("image/jpeg", 0.85);
@@ -614,30 +681,45 @@ async function aiTranscribe(jpegs, hint) {
   return { text, truncated: data.stop_reason === "max_tokens" };
 }
 async function ocrPdf(pdf, onProgress, reason) {
-  const N = pdf.numPages, out = [];
-  let truncated = false;
-  for (let a = 1; a <= N; a += OCR_PAGES_PER_CALL) {
-    const b = Math.min(N, a + OCR_PAGES_PER_CALL - 1);
-    const jpegs = [];
-    for (let i = a; i <= b; i++) { onProgress?.(`準備第 ${i}/${N} 頁影像…`); jpegs.push(await pdfPageToJpeg(pdf, i)); }
-    onProgress?.(`AI 辨識第 ${a === b ? a : a + "–" + b} 頁（共 ${N} 頁）…`);
-    const r = await aiTranscribe(jpegs, `第 ${a}–${b} 頁，共 ${N} 頁`);
-    truncated ||= r.truncated;
-    if (opts.pageMarks) out.push(`<!-- 第 ${a === b ? a : a + "–" + b} 頁 -->`);
-    out.push(r.text);
-  }
+  const N = pdf.numPages, chunks = [];
+  for (let a = 1; a <= N; a += OCR_PAGES_PER_CALL) chunks.push([a, Math.min(N, a + OCR_PAGES_PER_CALL - 1)]);
+  const results = new Array(chunks.length);
+  let next = 0, done = 0, truncated = false;
+  const range = (a, b) => (a === b ? `${a}` : `${a}–${b}`);
+  onProgress?.(`AI 辨識中… 0/${N} 頁`);
+  // 同時送出 OCR_CONCURRENCY 批，結果依頁序組回
+  const worker = async () => {
+    while (next < chunks.length) {
+      const ci = next++, [a, b] = chunks[ci], jpegs = [];
+      for (let i = a; i <= b; i++) jpegs.push(await pdfPageToJpeg(pdf, i));
+      const r = await aiTranscribe(jpegs, `第 ${range(a, b)} 頁，共 ${N} 頁`);
+      results[ci] = r; truncated ||= r.truncated; done += b - a + 1;
+      onProgress?.(`AI 辨識中… ${done}/${N} 頁`);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(OCR_CONCURRENCY, chunks.length) }, worker));
+  const out = [];
+  chunks.forEach(([a, b], i) => {
+    if (opts.pageMarks) out.push(`<!-- 第 ${range(a, b)} 頁 -->`);
+    out.push(ocrTidy(results[i].text));
+  });
   return {
     md: tidy(out.join("\n\n")), engine: `Claude OCR · ${N} 頁`,
     warn: (reason ? reason + "；" : "") + "AI 辨識結果請核對數字與專有名詞" + (truncated ? "；部分頁面內容太多可能被截斷" : ""),
   };
 }
 async function ocrImage(file, onProgress) {
+  const key = await ocrKey(await file.arrayBuffer());
+  const hit = await cacheGet(key);
+  if (hit) return fromCache(hit);
   onProgress?.("壓縮圖片…");
   const jpeg = await fileToJpeg(file);
   onProgress?.("AI 辨識中…");
   const r = await aiTranscribe([jpeg]);
   if (!r.text) throw new Error("AI 在圖片中找不到文字");
-  return { md: tidy(r.text), engine: "Claude OCR · 圖片", warn: "AI 辨識結果請核對數字與專有名詞" + (r.truncated ? "；內容可能被截斷" : "") };
+  const res = { md: tidy(ocrTidy(r.text)), engine: "Claude OCR · 圖片", warn: "AI 辨識結果請核對數字與專有名詞" + (r.truncated ? "；內容可能被截斷" : "") };
+  cachePut(key, res);
+  return res;
 }
 
 async function convertFile(file, onProgress) {
@@ -679,6 +761,9 @@ function renderChips() {
   const done = items.filter((i) => i.status === "ok").length;
   $("zipBtn").hidden = done < 2;
   $("clearBtn").hidden = !items.length;
+  // 有檔案後把大選檔區收成小按鈕，讓出畫面
+  $("dropzone").hidden = items.length > 0;
+  $("addBtn").hidden = !items.length;
 }
 function select(id) {
   currentId = id;
@@ -690,7 +775,16 @@ function select(id) {
   $("engineInfo").textContent = it?.engine || "";
   renderChips(); refresh();
 }
+function grow() {
+  if (editor.hidden) return;
+  const y = window.scrollY;
+  editor.style.height = "auto";
+  editor.style.height = editor.scrollHeight + 2 + "px";
+  window.scrollTo(0, y);
+}
+window.addEventListener("resize", grow);
 function refresh() {
+  grow();
   const v = editor.value;
   $("copyBtn").disabled = $("saveBtn").disabled = !v;
   $("countInfo").textContent = v ? `${v.length.toLocaleString()} 字元・${v.split("\n").length.toLocaleString()} 行` : "";
@@ -709,7 +803,7 @@ function setMode(m) {
   $("srcBtn").classList.toggle("on", m === "src");
   $("pvBtn").classList.toggle("on", m === "pv");
   editor.hidden = m !== "src"; preview.hidden = m !== "pv";
-  if (m === "pv") renderPreview();
+  if (m === "pv") renderPreview(); else grow();
 }
 $("srcBtn").onclick = () => setMode("src");
 $("pvBtn").onclick = () => setMode("pv");
@@ -825,6 +919,13 @@ $("clearBtn").onclick = () => { items.length = 0; currentId = null; editor.value
 
 /* --- 選項面板 / 離線預載 --- */
 $("optBtn").onclick = () => { const o = $("optPanel").classList.toggle("open"); $("optBtn").setAttribute("aria-expanded", o); };
+$("ocrCacheBtn").onclick = async () => {
+  await cacheOp("readwrite", (st) => st.clear());
+  $("ocrCacheInfo").textContent = "✅ 已清除，下次會重新辨識";
+};
+if ("IntersectionObserver" in window) {
+  new IntersectionObserver(([e]) => $("bar").classList.toggle("stuck", !e.isIntersecting)).observe($("barSentinel"));
+}
 $("preloadBtn").onclick = async () => {
   const urls = [...Object.values(LIBS).flat(), ...EXTRA_OFFLINE];
   const info = $("preloadInfo");

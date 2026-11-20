@@ -1,6 +1,6 @@
 // WordiOS v2 Service Worker
 // 更新 App 時改這個版本號
-const VERSION = "wordios-v2.1.0";
+const VERSION = "wordios-v2.2.0";
 const CORE = `${VERSION}-core`;
 const LIBS = "wordios-libs";   // CDN 元件網址都帶版本號，內容不會變，可長期快取
 
