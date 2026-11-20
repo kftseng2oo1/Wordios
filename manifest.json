@@ -1,0 +1,19 @@
+{
+  "name": "WordiOS - Doc2MD",
+  "short_name": "WordiOS",
+  "description": "將 Word、Excel、PPT、PDF 轉換為乾淨的 Markdown",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0d1117",
+  "theme_color": "#0d1117",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
