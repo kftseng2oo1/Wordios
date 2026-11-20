@@ -60,6 +60,9 @@
         ],
         "application/pdf": [
           ".pdf"
+        ],
+        "application/epub+zip": [
+          ".epub"
         ]
       },
       "icons": [
@@ -105,7 +108,9 @@
             ".pdf",
             "image/*",
             "text/plain",
-            "text/html"
+            "text/html",
+            "application/epub+zip",
+            ".epub"
           ]
         }
       ]

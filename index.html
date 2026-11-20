@@ -46,6 +46,7 @@
   .field input { display: block; width: 100%; margin-top: 4px; padding: 9px 10px; font-size: 16px; border-radius: 8px;
     border: 1px solid var(--border); background: var(--bg); color: var(--text); }
   .optHead { margin: 14px 0 2px; font-size: .8rem; color: var(--accent); letter-spacing: .05em; }
+  .opt select { font-size: 16px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); flex: none; }
   .opt input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent); flex: none; }
   .dropzone {
     margin-top: 12px; border: 1.5px dashed var(--border); background: var(--panel); border-radius: 14px;
@@ -96,6 +97,8 @@
   .preview pre { background: #0b0f14; padding: 10px; border-radius: 8px; overflow-x: auto; }
   .preview blockquote { margin: 0; padding-left: 12px; border-left: 3px solid var(--border); color: var(--muted); }
   .preview a { color: var(--accent); }
+  .preview .fnref a { text-decoration: none; }
+  .preview .footnotes { font-size: .88em; color: var(--muted); }
   .preview .katex-display { overflow-x: auto; overflow-y: hidden; padding: 4px 0; }
   .meta { display: flex; justify-content: space-between; color: var(--muted); font-size: .78rem; margin-top: 6px; }
   .toast {
@@ -118,7 +121,10 @@
 </header>
 
 <section id="optPanel" class="panel">
-  <label class="opt"><span>Word 保留圖片<small>以 base64 內嵌，檔案會變很大</small></span><input type="checkbox" data-opt="images" /></label>
+  <label class="opt"><span>圖片（Word・PPT・EPUB）<small>另存：儲存時打包成 .zip（.md + images 資料夾）</small></span>
+    <select data-opt="imgMode"><option value="files">另存成圖檔</option><option value="base64">內嵌在 .md</option><option value="none">略過</option></select></label>
+  <label class="opt"><span>知識庫分段長度<small>匯出 JSONL 時每段的字數上限</small></span>
+    <select data-opt="chunkSize"><option value="500">500 字</option><option value="800">800 字</option><option value="1200">1200 字</option><option value="2000">2000 字</option></select></label>
   <label class="opt"><span>PPT 包含講者備註</span><input type="checkbox" data-opt="notes" /></label>
   <label class="opt"><span>PDF 移除重複頁首頁尾</span><input type="checkbox" data-opt="stripHF" /></label>
   <label class="opt"><span>PDF 標記頁碼<small>插入 &lt;!-- 第 N 頁 --&gt;</small></span><input type="checkbox" data-opt="pageMarks" /></label>
@@ -134,10 +140,10 @@
 
 <label id="dropzone" class="dropzone" for="fileInput">
   <strong>📄 點此選擇或拖曳檔案（可多選）</strong>
-  <p>.docx・.xlsx / .xls / .csv・.pptx・.pdf・.html・.txt<br>📷 文件照片 / 掃描 PDF → AI 辨識<br>一般檔案只在裝置上轉換；只有 AI 辨識時才會送出</p>
+  <p>.docx・.xlsx / .xls / .csv・.pptx・.pdf・.epub・.html・.txt<br>📷 文件照片 / 掃描 PDF → AI 辨識<br>一般檔案只在裝置上轉換；只有 AI 辨識時才會送出</p>
 </label>
 <input id="fileInput" type="file" multiple hidden
-  accept=".docx,.xlsx,.xls,.xlsm,.csv,.ods,.pptx,.pdf,.html,.htm,.txt,.md,.doc,.ppt,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/pdf,text/csv,text/html,text/plain,text/markdown,application/msword,application/vnd.ms-powerpoint,application/vnd.oasis.opendocument.spreadsheet,image/*,.jpg,.jpeg,.png,.webp,.heic,.heif" />
+  accept=".docx,.xlsx,.xls,.xlsm,.csv,.ods,.pptx,.pdf,.html,.htm,.txt,.md,.doc,.ppt,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/pdf,text/csv,text/html,text/plain,text/markdown,application/msword,application/vnd.ms-powerpoint,application/vnd.oasis.opendocument.spreadsheet,image/*,.jpg,.jpeg,.png,.webp,.heic,.heif,.epub,application/epub+zip" />
 
 <div class="row">
   <label id="addBtn" class="btn" for="fileInput" hidden>＋ 加入檔案</label>
@@ -155,6 +161,7 @@
   </div>
   <button id="copyBtn" class="primary" type="button" disabled>複製</button>
   <button id="saveBtn" type="button" disabled>儲存 .md</button>
+  <button id="kbBtn" type="button" disabled>知識庫 JSONL</button>
   <button id="zipBtn" type="button" hidden>全部打包 .zip</button>
   <button id="clearBtn" type="button" hidden>清除</button>
 </div>
@@ -165,7 +172,7 @@
 <div id="preview" class="preview" hidden></div>
 <div class="meta"><span id="countInfo"></span><span id="engineInfo"></span></div>
 
-<footer>WordiOS v2.4.1 · 一般轉檔全在瀏覽器端處理，AI 辨識經由 arcar Worker<br>舊版 .doc / .ppt 請先另存為 .docx / .pptx</footer>
+<footer>WordiOS v2.5 · 一般轉檔全在瀏覽器端處理，AI 辨識經由 arcar Worker<br>舊版 .doc / .ppt 請先另存為 .docx / .pptx</footer>
 <div id="toast" class="toast"></div>
 
 <script>
@@ -206,7 +213,7 @@ async function need(...names) {
 const $ = (id) => document.getElementById(id);
 const OPT_KEY = "wordios_v2_opts";
 const AI_DEFAULT = { aiUrl: "https://arcar.kftseng2oo1.workers.dev/v1/messages", aiModel: "claude-sonnet-5-5" };
-const opts = Object.assign({ images: false, notes: true, stripHF: true, pageMarks: false, autoOcr: true, forceOcr: false, hybrid: true }, AI_DEFAULT,
+const opts = Object.assign({ imgMode: "files", chunkSize: "800", notes: true, stripHF: true, pageMarks: false, autoOcr: true, forceOcr: false, hybrid: true }, AI_DEFAULT,
   (() => { try { return JSON.parse(localStorage.getItem(OPT_KEY)) || {}; } catch { return {}; } })());
 document.querySelectorAll("[data-opt]").forEach((el) => {
   const k = el.dataset.opt, isBox = el.type === "checkbox";
@@ -294,15 +301,84 @@ async function htmlToMd(html) {
   return tidy(s.turndown(html));
 }
 
+/* ===================== 圖片處理：另存檔案 / 內嵌 base64 / 略過 ===================== */
+const IMG_MIME = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", svg: "image/svg+xml", bmp: "image/bmp" };
+const WEB_IMG = /^image\/(png|jpe?g|gif|webp|svg\+xml|bmp)$/;
+function bytesToB64(u8) {
+  let s = "";
+  for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+const b64ToBytes = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+const slugName = (s) => (s || "file").replace(/[\s\\/:*?"<>|#%&{}$!'@+`=\[\]()]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "file";
+function imageSink(base) {
+  const assets = [];
+  const prefix = slugName(base);
+  return {
+    assets,
+    // 回傳 Markdown 要用的圖片網址；空字串代表略過
+    add(bytes, mime, ext) {
+      mime = (mime || IMG_MIME[(ext || "").toLowerCase()] || "application/octet-stream").toLowerCase();
+      ext = (ext || (Object.entries(IMG_MIME).find(([, m]) => m === mime) || [])[0] || "bin").toLowerCase().replace("jpeg", "jpg");
+      if (opts.imgMode === "none") return "";
+      if (opts.imgMode === "base64") return WEB_IMG.test(mime) ? `data:${mime};base64,${bytesToB64(bytes)}` : "";
+      const name = `images/${prefix}-${assets.length + 1}.${ext}`;
+      assets.push({ name, blob: new Blob([bytes], { type: mime }) });
+      return name;
+    },
+  };
+}
+
 /* ===================== 各格式轉換器 ===================== */
-async function convertDocx(buf) {
+/* 註腳 → Markdown 註腳 [^n]（Word 的 mammoth 輸出、EPUB 的 noteref 都適用） */
+const NOTE_REF_SEL = 'a[id^="footnote-ref-"], a[id^="endnote-ref-"], a[epub\\:type~="noteref"], a[role="doc-noteref"], a.footnote-ref, a.noteref';
+const NOTE_BACK_SEL = 'a[href^="#footnote-ref-"], a[href^="#endnote-ref-"], a[role="doc-backlink"], a.footnote-back, a[href^="#fnref"]';
+function extractNotes(html, start = 0) {
+  const doc = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
+  const labels = new Map(), notes = [];
+  let n = start;
+  for (const a of [...doc.querySelectorAll(NOTE_REF_SEL)]) {
+    const id = (a.getAttribute("href") || "").split("#")[1];
+    const target = id && doc.getElementById(id);
+    if (!target) continue;
+    if (!labels.has(id)) {
+      labels.set(id, ++n);
+      target.querySelectorAll(NOTE_BACK_SEL).forEach((x) => x.remove());   // 「↑ / ↩」返回連結
+      notes.push({ label: n, html: target.innerHTML });
+    }
+    const host = a.parentElement && a.parentElement.nodeName === "SUP" && a.parentElement.textContent.trim() === a.textContent.trim() ? a.parentElement : a;
+    host.replaceWith(doc.createTextNode(`FNREF${labels.get(id)}X`));   // 純英數記號，不會被 turndown 跳脫
+  }
+  for (const id of labels.keys()) doc.getElementById(id)?.remove();
+  // 清掉已經空掉的註腳容器（ol / section / aside）
+  for (const el of [...doc.querySelectorAll('ol, section, aside, div')].reverse())
+    if (!el.textContent.trim() && !el.querySelector("img")) el.remove();
+  return { html: doc.body.innerHTML, notes, next: n };
+}
+const fnDefs = async (notes) => {
+  const out = [];
+  // 去掉返回連結被移除後殘留的「. 」等符號
+  for (const nt of notes) out.push(`[^${nt.label}]: ` + (await htmlToMd(nt.html)).trim().replace(/^[.．、:：)）\]\s]+/, "").replace(/\n+/g, "\n    "));
+  return out.join("\n");
+};
+async function convertDocx(buf, ctx) {
   await need("mammoth");
-  const imgOpt = opts.images
-    ? undefined
-    : { convertImage: mammoth.images.imgElement(() => Promise.resolve({ src: "" })) };
-  const res = await mammoth.convertToHtml({ arrayBuffer: buf }, imgOpt);
+  const res = await mammoth.convertToHtml({ arrayBuffer: buf }, {
+    convertImage: mammoth.images.imgElement(async (image) => {
+      const b64 = await image.read("base64");
+      const src = ctx.img.add(b64ToBytes(b64), image.contentType);
+      return { src };
+    }),
+  });
+  const { html, notes } = extractNotes(res.value);
+  let md = (await htmlToMd(html)).replace(/FNREF(\d+)X/g, "[^$1]");
+  if (notes.length) md = md.trimEnd() + "\n\n" + (await fnDefs(notes));
   const warns = res.messages.filter((m) => m.type === "warning").length;
-  return { md: await htmlToMd(res.value), engine: "mammoth", warn: warns ? `有 ${warns} 個樣式無法對應，已用一般段落處理` : "" };
+  const info = [];
+  if (notes.length) info.push(`轉出 ${notes.length} 個註腳`);
+  if (ctx.img.assets.length) info.push(`${ctx.img.assets.length} 張圖片另存`);
+  if (warns) info.push(`有 ${warns} 個樣式無法對應，已用一般段落處理`);
+  return { md: tidy(md), engine: "mammoth", warn: info.join("；"), assets: ctx.img.assets };
 }
 
 async function convertSheet(buf, ext) {
@@ -361,7 +437,13 @@ function shapeToMd(el, ctx) {
     if (rows.length) ctx.body.push(mdTable(rows));
     return;
   }
-  if (name === "pic") { ctx.pics++; return; }
+  if (name === "pic") {
+    const blip = all(el, "blip")[0];
+    const rid = blip && (blip.getAttributeNS(RNS, "embed") || blip.getAttribute("r:embed"));
+    ctx.pics.push(rid || null);
+    ctx.body.push(`@@PIC${ctx.pics.length - 1}@@`);
+    return;
+  }
   if (name !== "sp") return;
   const ph = kid(el, "nvSpPr", "nvPr", "ph");
   const phType = ph ? (ph.getAttribute("type") || "body") : null;
@@ -389,7 +471,8 @@ function shapeToMd(el, ctx) {
   }
   if (lines.length) ctx.body.push(lines.every((l) => /^\s*- /.test(l)) ? lines.join("\n") : lines.join("\n\n"));
 }
-async function convertPptx(buf) {
+const RNS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+async function convertPptx(buf, ctxFile) {
   await need("jszip");
   const zip = await JSZip.loadAsync(buf);
   const read = (p) => zip.file(p)?.async("string");
@@ -415,15 +498,29 @@ async function convertPptx(buf) {
     if (!xml) continue;
     n++;
     const doc = new DOMParser().parseFromString(xml, "application/xml");
-    const ctx = { title: "", body: [], pics: 0 };
+    const ctx = { title: "", body: [], pics: [] };
     const tree = all(doc, "spTree")[0];
     if (tree) for (const c of tree.children) shapeToMd(c, ctx);
+    const dir = path.slice(0, path.lastIndexOf("/"));
+    const rels = relsMap(await read(dir + "/_rels/" + path.slice(dir.length + 1) + ".rels"));
+    // 投影片上的圖片：從 ppt/media 取出
+    const picMd = [];
+    for (const rid of ctx.pics) {
+      const rel = rid && rels[rid];
+      const mpath = rel && resolvePath(dir, rel.target);
+      const f = mpath && zip.file(mpath);
+      let md = "*[圖片]*";
+      if (f) {
+        const ext = mpath.split(".").pop();
+        const src = ctxFile.img.add(await f.async("uint8array"), IMG_MIME[ext.toLowerCase()], ext);
+        if (src) md = `![](${src})`;
+        else if (opts.imgMode === "none") md = "";
+      }
+      picMd.push(md);
+    }
     out.push(`## ${n}. ${ctx.title || "（無標題）"}`);
-    out.push(...ctx.body);
-    if (ctx.pics) out.push(`*[圖片 ×${ctx.pics}]*`);
+    out.push(...ctx.body.map((b) => b.replace(/@@PIC(\d+)@@/g, (_, i) => picMd[+i])).filter((b) => b.trim()));
     if (opts.notes) {
-      const dir = path.slice(0, path.lastIndexOf("/"));
-      const rels = relsMap(await read(dir + "/_rels/" + path.slice(dir.length + 1) + ".rels"));
       const notesRel = Object.values(rels).find((r) => r.type.endsWith("/notesSlide"));
       if (notesRel) {
         const nxml = await read(resolvePath(dir, notesRel.target));
@@ -443,7 +540,70 @@ async function convertPptx(buf) {
   }
   if (!n) throw new Error("找不到投影片內容");
   if (out[out.length - 1] === "---") out.pop();
-  return { md: tidy(out.join("\n\n")), engine: "PPTX 解析", warn: "" };
+  const na = ctxFile.img.assets.length;
+  return { md: tidy(out.join("\n\n")), engine: "PPTX 解析", warn: na ? `${na} 張圖片另存` : "", assets: ctxFile.img.assets };
+}
+
+/* --- EPUB：依 OPF 的 spine 順序把每章 XHTML 轉 Markdown --- */
+async function convertEpub(buf, ctx) {
+  await need("jszip");
+  const zip = await JSZip.loadAsync(buf);
+  const xml = (t, type = "application/xml") => new DOMParser().parseFromString(t, type);
+  const container = await zip.file("META-INF/container.xml")?.async("string");
+  if (!container) throw new Error("不是有效的 EPUB（缺少 container.xml）");
+  const opfPath = all(xml(container), "rootfile")[0]?.getAttribute("full-path");
+  const opfText = opfPath && await zip.file(opfPath)?.async("string");
+  if (!opfText) throw new Error("EPUB 內容目錄（OPF）讀取失敗");
+  const opf = xml(opfText);
+  const opfDir = opfPath.includes("/") ? opfPath.slice(0, opfPath.lastIndexOf("/")) : "";
+  const manifest = {};
+  for (const it of all(opf, "item")) manifest[it.getAttribute("id")] = { href: it.getAttribute("href"), type: it.getAttribute("media-type") || "" };
+  const title = all(opf, "title")[0]?.textContent?.trim() || "";
+  const author = all(opf, "creator")[0]?.textContent?.trim() || "";
+  const chapters = [];
+  for (const ref of all(opf, "itemref")) {
+    const m = manifest[ref.getAttribute("idref")];
+    if (!m || !/html|xml/.test(m.type)) continue;
+    const path = resolvePath(opfDir, decodeURIComponent(m.href.split("#")[0]));
+    const text = await zip.file(path)?.async("string");
+    if (!text) continue;
+    let doc = xml(text, "application/xhtml+xml");
+    if (doc.getElementsByTagName("parsererror").length) doc = xml(text, "text/html");
+    const body = doc.getElementsByTagName("body")[0];
+    if (!body) continue;
+    const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+    // 章節內圖片（<img> 與 SVG 封面的 <image>）
+    for (const img of [...body.getElementsByTagName("img"), ...body.getElementsByTagName("image")]) {
+      const src = img.getAttribute("src") || img.getAttribute("xlink:href") || img.getAttributeNS("http://www.w3.org/1999/xlink", "href");
+      let out = "";
+      if (src && !/^(data:|https?:)/.test(src)) {
+        const ipath = resolvePath(dir, decodeURIComponent(src));
+        const f = zip.file(ipath);
+        if (f) { const ext = ipath.split(".").pop(); out = ctx.img.add(await f.async("uint8array"), IMG_MIME[ext.toLowerCase()], ext); }
+      }
+      const rep = doc.createElement("img");
+      rep.setAttribute("src", out);
+      rep.setAttribute("alt", img.getAttribute("alt") || "");
+      (img.localName === "image" && img.closest("svg") ? img.closest("svg") : img).replaceWith(rep);
+    }
+    chapters.push(body.innerHTML);
+  }
+  if (!chapters.length) throw new Error("EPUB 裡找不到章節內容");
+  let label = 0;
+  const notes = [], parts = [];
+  for (const h of chapters) {
+    const r = extractNotes(h, label);
+    label = r.next; notes.push(...r.notes);
+    parts.push((await htmlToMd(r.html)).replace(/FNREF(\d+)X/g, "[^$1]").trim());
+  }
+  let md = parts.filter(Boolean).join("\n\n---\n\n");
+  if (notes.length) md += "\n\n" + (await fnDefs(notes));
+  if (title && !md.startsWith("# ")) md = `# ${title}\n\n` + (author ? `*${author}*\n\n` : "") + md;
+  const na = ctx.img.assets.length;
+  const info = [];
+  if (notes.length) info.push(`轉出 ${notes.length} 個註腳`);
+  if (na) info.push(`${na} 張圖片另存`);
+  return { md: tidy(md), engine: `EPUB · ${chapters.length} 章`, warn: info.join("；"), assets: ctx.img.assets };
 }
 
 const RADICAL_MAP = { "⻑": "長", "⻝": "食", "⻄": "西", "⻘": "青", "⻣": "骨", "⻤": "鬼", "⻨": "麥", "⻩": "黃", "⻭": "齒", "⻜": "飛", "⻢": "馬", "⻔": "門", "⻛": "風", "⻅": "見", "⻆": "角", "⻈": "言", "⻋": "車", "⻓": "長", "⻚": "頁", "⻥": "魚", "⻦": "鳥", "⻰": "龍", "⻳": "龜", "⺟": "母", "⺠": "民", "⻏": "邑", "⻖": "阜", "⺩": "王", "⺮": "竹", "⺶": "羊", "⻁": "虎", "⻒": "長" };
@@ -834,15 +994,17 @@ async function ocrImage(file, onProgress) {
   return res;
 }
 
-async function convertFile(file, onProgress) {
+async function convertFile(file, onProgress, base) {
   const ext = (file.name.split(".").pop() || "").toLowerCase();
+  const ctx = { img: imageSink(base) };
   if (ext === "doc" || ext === "ppt") throw new Error(`舊版 .${ext} 格式不支援，請在 Office 另存為 .${ext}x`);
   if (/^image\//.test(file.type) && !/^(jpe?g|png|webp|gif|heic|heif|bmp)$/.test(ext)) return ocrImage(file, onProgress);
   const buf = await file.arrayBuffer();
   switch (ext) {
-    case "docx": return convertDocx(buf);
+    case "docx": return convertDocx(buf, ctx);
+    case "epub": return convertEpub(buf, ctx);
     case "xlsx": case "xlsm": case "xls": case "ods": case "csv": return convertSheet(buf, ext);
-    case "pptx": return convertPptx(buf);
+    case "pptx": return convertPptx(buf, ctx);
     case "pdf": return convertPdf(buf, onProgress);
     case "html": case "htm": return { md: await htmlToMd(decodeText(buf)), engine: "turndown" };
     case "txt": case "md": case "markdown": return { md: decodeText(buf), engine: "純文字" };
@@ -850,6 +1012,94 @@ async function convertFile(file, onProgress) {
     default: throw new Error(`不支援 .${ext} 格式`);
   }
 }
+
+/* ===================== 知識庫分段（RAG）：依標題切段，每段附標題路徑 ===================== */
+function hash8(str) {   // FNV-1a，產生短 ID（Vectorize 的 ID 上限 64 bytes）
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return (h >>> 0).toString(16).padStart(8, "0");
+}
+function splitLong(block, max) {
+  // 表格：按列切，每段重複表頭
+  const lines = block.split("\n");
+  if (lines.length > 2 && /^\s*\|/.test(lines[0]) && isSepRow(lines[1])) {
+    const head = lines.slice(0, 2), out = [];
+    let cur = [];
+    for (const r of lines.slice(2)) {
+      if (cur.length && [...head, ...cur, r].join("\n").length > max) { out.push([...head, ...cur].join("\n")); cur = []; }
+      cur.push(r);
+    }
+    if (cur.length) out.push([...head, ...cur].join("\n"));
+    return out;
+  }
+  // 一般段落：按句子切
+  const sents = block.match(/[^。！？!?；;\n]+[。！？!?；;]*\s*|\n/g) || [block];
+  const out = [];
+  let cur = "";
+  for (let s of sents) {
+    if (cur && (cur + s).length > max) { out.push(cur.trim()); cur = ""; }
+    while (s.length > max) { out.push(s.slice(0, max).trim()); s = s.slice(max); }   // 單句超長就硬切
+    cur += s;
+  }
+  if (cur.trim()) out.push(cur.trim());
+  return out;
+}
+function chunkMarkdown(md, source, max) {
+  max = +max || 800;
+  md = md.replace(/!\[([^\]]*)\]\(data:[^)]+\)/g, "[圖片$1]");   // 內嵌 base64 圖片不放進知識庫
+  // 註腳定義先抽出來，之後附到有引用它的那一段
+  const notes = new Map();
+  md = md.replace(/^\[\^([^\]\s]+)\]:[ \t]*(.*(?:\n(?: {4}|\t).*)*)/gm, (_, k, t) => { notes.set(k, t.replace(/\n(?: {4}|\t)/g, " ").trim()); return ""; });
+  const lines = md.split("\n"), path = [], sections = [];
+  let sec = { headings: [], blocks: [] }, buf = [], fence = false;
+  const pushBlock = () => { const t = buf.join("\n").trim(); if (t) sec.blocks.push(t); buf = []; };
+  for (const line of lines) {
+    if (/^\s*```/.test(line)) { fence = !fence; buf.push(line); if (!fence) pushBlock(); continue; }
+    if (fence) { buf.push(line); continue; }
+    const h = line.match(/^(#{1,6})\s+(.*)$/);
+    if (h) {
+      pushBlock();
+      if (sec.blocks.length) sections.push(sec);
+      const lv = h[1].length;
+      path.length = Math.min(path.length, lv - 1);
+      while (path.length < lv - 1) path.push("");
+      path.push(h[2].trim());
+      sec = { headings: path.filter(Boolean), blocks: [] };
+      continue;
+    }
+    if (!line.trim() || /^(---|\*\*\*)\s*$/.test(line)) { pushBlock(); continue; }
+    buf.push(line);
+  }
+  pushBlock();
+  if (sec.blocks.length) sections.push(sec);
+  const title = (md.match(/^#\s+(.+)$/m) || [])[1]?.trim() || source;
+  const sid = hash8(source + "|" + md.length);
+  const chunks = [];
+  for (const s of sections) {
+    let cur = [];
+    const flush = () => {
+      if (!cur.length) return;
+      let text = cur.join("\n\n");
+      const refs = [...new Set([...text.matchAll(/\[\^([^\]\s]+)\]/g)].map((m) => m[1]))].filter((k) => notes.has(k));
+      if (refs.length) text += "\n\n" + refs.map((k) => `[^${k}]: ${notes.get(k)}`).join("\n");
+      const hp = s.headings.join(" > ");
+      chunks.push({
+        id: `${sid}-${chunks.length + 1}`, source, title, headings: s.headings, order: chunks.length + 1,
+        text, embed_text: (hp ? hp + "\n\n" : "") + text, chars: text.length,
+      });
+      cur = [];
+    };
+    for (const b of s.blocks) {
+      for (const piece of b.length > max ? splitLong(b, max) : [b]) {
+        if (cur.length && (cur.join("\n\n") + "\n\n" + piece).length > max) flush();
+        cur.push(piece);
+      }
+    }
+    flush();
+  }
+  return chunks;
+}
+const toJsonl = (chunks) => chunks.map((c) => JSON.stringify(c)).join("\n") + "\n";
 
 /* ===================== UI ===================== */
 const editor = $("editor"), preview = $("preview"), statusEl = $("status");
@@ -898,7 +1148,9 @@ window.addEventListener("resize", grow);
 function refresh() {
   grow();
   const v = editor.value;
-  $("copyBtn").disabled = $("saveBtn").disabled = !v;
+  $("copyBtn").disabled = $("saveBtn").disabled = $("kbBtn").disabled = !v;
+  const na = cur()?.assets?.length || 0;
+  $("saveBtn").textContent = na ? `儲存 .zip（含 ${na} 張圖）` : "儲存 .md";
   $("countInfo").textContent = v ? `${v.length.toLocaleString()} 字元・${v.split("\n").length.toLocaleString()} 行` : "";
   if (mode === "pv") renderPreview();
 }
@@ -908,9 +1160,19 @@ async function renderPreview() {
   try {
     await need("marked");
     // 先把 $$…$$ / $…$ 公式換成記號，避免被 Markdown 誤解析；程式碼區塊內不處理
+    // 註腳：[^n]: 定義收到文末清單，[^n] 換成上標連結
+    const defs = new Map();
+    let body = editor.value.replace(/^\[\^([^\]\s]+)\]:[ \t]*(.*(?:\n(?: {4}|\t).*)*)/gm, (_, k, t) => { defs.set(k, t.replace(/\n(?: {4}|\t)/g, "\n")); return ""; });
     const maths = [];
     const tok = (tex, display) => { maths.push({ tex, display }); return `KXMATH${maths.length - 1}KX`; };
-    const src = editor.value.split(/(```[\s\S]*?```|`[^`\n]+`)/).map((part, i) => i % 2 ? part : part
+    const order = [];
+    body = body.split(/(```[\s\S]*?```|`[^`\n]+`)/).map((part, i) => i % 2 ? part : part.replace(/\[\^([^\]\s]+)\]/g, (m, k) => {
+      if (!defs.has(k)) return m;
+      if (!order.includes(k)) order.push(k);
+      return `<sup class="fnref"><a href="#fn-${order.indexOf(k) + 1}">${order.indexOf(k) + 1}</a></sup>`;
+    })).join("");
+    if (order.length) body += "\n\n<hr>\n\n<section class=\"footnotes\">\n\n" + order.map((k, i) => `${i + 1}. <span id="fn-${i + 1}"></span>${defs.get(k)}`).join("\n") + "\n\n</section>";
+    const src = body.split(/(```[\s\S]*?```|`[^`\n]+`)/).map((part, i) => i % 2 ? part : part
       .replace(/\$\$([\s\S]+?)\$\$/g, (_, t) => "\n\n" + tok(t.trim(), true) + "\n\n")
       .replace(/\$([^\s$](?:[^$\n]*[^\s$])?)\$(?!\d)/g, (_, t) => tok(t, false))).join("");
     let html = DOMPurify.sanitize(marked.parse(src, { gfm: true, breaks: false }));
@@ -922,6 +1184,16 @@ async function renderPreview() {
       html = html.replace(/<p>KXMATH(\d+)KX<\/p>/g, (_, i) => render(maths[+i])).replace(/KXMATH(\d+)KX/g, (_, i) => render(maths[+i]));
     }
     preview.innerHTML = html;
+    // 另存的圖片：把 images/... 指向記憶體中的檔案
+    const it = cur();
+    if (it?.assets?.length) {
+      it.urls ||= Object.fromEntries(it.assets.map((a) => [a.name, URL.createObjectURL(a.blob)]));
+      preview.querySelectorAll("img").forEach((img) => {
+        let s = img.getAttribute("src") || "";
+        try { s = decodeURI(s); } catch {}
+        if (it.urls[s]) img.src = it.urls[s];
+      });
+    }
   } catch (e) { preview.textContent = e.message; }
 }
 function setMode(m) {
@@ -944,8 +1216,9 @@ async function addFiles(fileList) {
   if (fresh.length > 1 || items.length > 1) need("jszip").catch(() => {});   // 先載好，打包時才不會失去 iOS 的使用者手勢
   for (const it of fresh) {
     try {
-      const r = await convertFile(it.file, (msg) => { if (it.id === currentId) setStatus(`⏳ ${it.name}：${msg}`); });
+      const r = await convertFile(it.file, (msg) => { if (it.id === currentId) setStatus(`⏳ ${it.name}：${msg}`); }, it.base);
       Object.assign(it, r, { status: "ok" });
+      if (it.assets?.length) need("jszip").catch(() => {});   // 有圖片時儲存會打包 zip，先載好
     } catch (e) {
       console.error(e);
       Object.assign(it, { status: "err", error: e.message || String(e) });
@@ -1027,21 +1300,41 @@ async function saveBlob(blob, filename) {
 }
 $("saveBtn").onclick = () => {
   const it = cur();
-  saveBlob(new Blob([editor.value], { type: "text/markdown;charset=utf-8" }), (it?.base || "converted") + ".md");
+  const base = it?.base || "converted";
+  if (it?.assets?.length) {
+    // 有另存圖片：打包成 zip（.md + images/）
+    if (!window.JSZip) { need("jszip").then(() => toast("再按一次儲存")).catch((e) => toast(e.message)); return; }
+    const zip = new JSZip();
+    zip.file(base + ".md", editor.value);
+    for (const a of it.assets) zip.file(a.name, a.blob);
+    zip.generateAsync({ type: "blob", mimeType: "application/zip" }).then((b) => saveBlob(b, base + ".zip"));
+    return;
+  }
+  saveBlob(new Blob([editor.value], { type: "text/markdown;charset=utf-8" }), base + ".md");
+};
+$("kbBtn").onclick = () => {
+  const it = cur();
+  const chunks = chunkMarkdown(editor.value, it?.name || "converted", opts.chunkSize);
+  if (!chunks.length) return toast("沒有可分段的內容");
+  saveBlob(new Blob([toJsonl(chunks)], { type: "application/x-ndjson" }), (it?.base || "converted") + ".chunks.jsonl");
+  toast(`已切成 ${chunks.length} 段`);
 };
 $("zipBtn").onclick = async () => {
   try {
     await need("jszip");
-    const zip = new JSZip(), used = new Set();
+    const zip = new JSZip(), used = new Set(), kb = [];
     for (const it of items.filter((i) => i.status === "ok")) {
       let n = it.base + ".md", k = 2;
       while (used.has(n)) n = `${it.base} (${k++}).md`;
       used.add(n); zip.file(n, it.md);
+      for (const a of it.assets || []) zip.file(a.name, a.blob);
+      kb.push(...chunkMarkdown(it.md, it.name, opts.chunkSize));
     }
+    if (kb.length) zip.file("knowledge.chunks.jsonl", toJsonl(kb));
     saveBlob(await zip.generateAsync({ type: "blob", mimeType: "application/zip" }), "wordios-markdown.zip");
   } catch (e) { toast(e.message); }
 };
-$("clearBtn").onclick = () => { items.length = 0; currentId = null; editor.value = ""; setStatus("已清除"); $("engineInfo").textContent = ""; renderChips(); refresh(); };
+$("clearBtn").onclick = () => { for (const it of items) for (const u of Object.values(it.urls || {})) URL.revokeObjectURL(u); items.length = 0; currentId = null; editor.value = ""; setStatus("已清除"); $("engineInfo").textContent = ""; renderChips(); refresh(); };
 
 /* --- 選項面板 / 離線預載 --- */
 $("optBtn").onclick = () => { const o = $("optPanel").classList.toggle("open"); $("optBtn").setAttribute("aria-expanded", o); };

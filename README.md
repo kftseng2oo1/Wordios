@@ -1,4 +1,4 @@
-# WordiOS v2.4 · 文件轉 Markdown
+# WordiOS v2.5 · 文件轉 Markdown
 
 在 iPhone / 瀏覽器上把 Word、Excel、PPT、PDF 轉成乾淨的 Markdown。
 一般轉檔**全部在瀏覽器端處理，檔案不會上傳**；只有掃描檔、照片才會經由 arcar Worker 送給 Claude 做 AI 辨識。
@@ -7,10 +7,11 @@
 
 | 格式 | 引擎 | 說明 |
 | --- | --- | --- |
-| .docx | mammoth.js + turndown | 標題、粗斜體、清單、表格（含儲存格換行）、可選保留圖片 |
+| .docx | mammoth.js + turndown | 標題、粗斜體、清單、表格（含儲存格換行）、圖片、註腳／章節附註轉 `[^n]` |
 | .xlsx / .xls / .xlsm / .ods / .csv | SheetJS | 每個工作表一個表格，自動去除空列空欄；CSV 自動判斷 UTF-8 / Big5 |
 | .pptx | 自寫 OOXML 解析（JSZip） | 依實際投影片順序、標題、多層項目符號、表格、講者備註 |
 | .pdf | pdf.js ＋ Claude 混合模式 | 依字級判斷標題、依行距合併段落、移除重複頁首頁尾、修正康熙部首字；含表格／多欄／公式的頁面自動交給 AI 修正（附文字層原文校正），跨頁表格自動接合，公式輸出 LaTeX、預覽用 KaTeX |
+| .epub | JSZip + turndown | 依 OPF spine 章節順序、書名作者、圖片、註腳轉 `[^n]` |
 | .html / .txt / .md | turndown / 直接讀取 | |
 | 掃描型 PDF / 文件照片（jpg・png・heic） | Claude Vision（arcar `/v1/messages`） | 頁面在手機上畫成 1568px JPEG，每 4 頁一批、同時送 2 批；結果存在 IndexedDB，同檔案不重複計費 |
 | 剪貼簿 | turndown | 從 Word、Pages、網頁複製後按「貼上轉換」 |
@@ -28,6 +29,23 @@ manifest.json + PNG 圖示（iOS 主畫面用 apple-touch-icon.png）
 - 轉換元件從 jsDelivr / SheetJS CDN **依需要才載入**，所以首次開啟很快。
 - 選項裡的「下載離線轉檔元件」會預先快取全部元件，之後可以離線轉檔。
 - 更新 App 時，把 `sw.js` 的 `VERSION` 改掉即可。
+
+## 圖片
+
+選項「圖片」三選一：**另存成圖檔**（預設，儲存時打包成 `.zip` = `.md` + `images/`）、內嵌 base64、略過。適用 Word、PPT、EPUB（PDF 內嵌圖片暫不支援）。
+
+## 知識庫分段（RAG）
+
+「知識庫 JSONL」依標題切段，每行一段：
+
+```json
+{"id":"8dc41bd2-2","source":"報告.docx","title":"…","headings":["第一章","1.1"],"order":2,"text":"…","embed_text":"第一章 > 1.1\n\n…","chars":312}
+```
+
+- `embed_text` 前面帶標題路徑，拿去算 embedding；`text` 是原文
+- 段長上限可在選項設定（500 / 800 / 1200 / 2000 字）；超長段落依句號切、大表格依列切並重複表頭
+- 註腳內容會附在引用它的那一段；`id` 短於 64 bytes，可直接當 Cloudflare Vectorize 的 vector ID
+- 「全部打包 .zip」會一併附上所有檔案合併的 `knowledge.chunks.jsonl`
 
 ## AI 辨識（OCR）
 
