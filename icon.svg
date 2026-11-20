@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#11161f"/>
+      <stop offset="100%" stop-color="#090c10"/>
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#58a6ff"/>
+      <stop offset="100%" stop-color="#2ea043"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" rx="116" fill="url(#bgGrad)"/>
+
+  <path d="M128 126 h126 l54 54 v206 c0 14-11 26-26 26 H128 c-14 0-26-12-26-26 V152 c0-14 12-26 26-26 z"
+        fill="#161b22" stroke="#30363d" stroke-width="10"/>
+  <path d="M254 126 v54 h54" fill="none" stroke="#30363d" stroke-width="10" stroke-linejoin="round"/>
+
+  <line x1="146" y1="224" x2="256" y2="224" stroke="#8b949e" stroke-width="12" stroke-linecap="round"/>
+  <line x1="146" y1="268" x2="236" y2="268" stroke="#8b949e" stroke-width="12" stroke-linecap="round"/>
+  <line x1="146" y1="312" x2="210" y2="312" stroke="#58a6ff" stroke-width="12" stroke-linecap="round"/>
+
+  <path d="M286 256 h56 m-18-18 l18 18 l-18 18" fill="none" stroke="url(#accentGrad)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="332" y="296" width="96" height="72" rx="16" fill="#1f2937" stroke="#58a6ff" stroke-width="8"/>
+  <text x="380" y="343" text-anchor="middle" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="38" font-weight="700">MD</text>
+
+  <path d="M392 114 L402 142 L430 152 L402 162 L392 190 L382 162 L354 152 L382 142 Z"
+        fill="#f0b429"/>
+</svg>
