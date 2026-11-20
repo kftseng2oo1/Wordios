@@ -96,6 +96,7 @@
   .preview pre { background: #0b0f14; padding: 10px; border-radius: 8px; overflow-x: auto; }
   .preview blockquote { margin: 0; padding-left: 12px; border-left: 3px solid var(--border); color: var(--muted); }
   .preview a { color: var(--accent); }
+  .preview .katex-display { overflow-x: auto; overflow-y: hidden; padding: 4px 0; }
   .meta { display: flex; justify-content: space-between; color: var(--muted); font-size: .78rem; margin-top: 6px; }
   .toast {
     position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 22px); transform: translateX(-50%) translateY(20px);
@@ -122,6 +123,7 @@
   <label class="opt"><span>PDF 移除重複頁首頁尾</span><input type="checkbox" data-opt="stripHF" /></label>
   <label class="opt"><span>PDF 標記頁碼<small>插入 &lt;!-- 第 N 頁 --&gt;</small></span><input type="checkbox" data-opt="pageMarks" /></label>
   <div class="optHead">AI 辨識（OCR）· 經由你的 arcar Worker 呼叫 Claude</div>
+  <label class="opt"><span>PDF 混合模式<small>只把含表格、多欄、公式的頁面交給 AI 修正，其他頁免費</small></span><input type="checkbox" data-opt="hybrid" /></label>
   <label class="opt"><span>掃描型 PDF 自動用 AI 辨識<small>沒有文字層時自動改用 AI</small></span><input type="checkbox" data-opt="autoOcr" /></label>
   <label class="opt"><span>PDF 一律用 AI 辨識<small>版面複雜、表格多、文字層亂碼時用</small></span><input type="checkbox" data-opt="forceOcr" /></label>
   <label class="field">API 網址<input type="url" data-opt="aiUrl" autocapitalize="off" autocomplete="off" spellcheck="false" /></label>
@@ -163,7 +165,7 @@
 <div id="preview" class="preview" hidden></div>
 <div class="meta"><span id="countInfo"></span><span id="engineInfo"></span></div>
 
-<footer>WordiOS v2.3 · 一般轉檔全在瀏覽器端處理，AI 辨識經由 arcar Worker<br>舊版 .doc / .ppt 請先另存為 .docx / .pptx</footer>
+<footer>WordiOS v2.4 · 一般轉檔全在瀏覽器端處理，AI 辨識經由 arcar Worker<br>舊版 .doc / .ppt 請先另存為 .docx / .pptx</footer>
 <div id="toast" class="toast"></div>
 
 <script>
@@ -178,8 +180,10 @@ const LIBS = {
   jszip:    [JSD + "jszip@3.10.1/dist/jszip.min.js"],
   pdfjs:    [PDFJS_BASE + "build/pdf.min.js"],
   marked:   [JSD + "marked@18.2.1/lib/marked.umd.js", JSD + "dompurify@3.4.18/dist/purify.min.js"],
+  katex:    [JSD + "katex@0.19.1/dist/katex.min.js"],
 };
-const EXTRA_OFFLINE = [PDFJS_BASE + "build/pdf.worker.min.js"];
+const KATEX_CSS = JSD + "katex@0.19.1/dist/katex.min.css";
+const EXTRA_OFFLINE = [PDFJS_BASE + "build/pdf.worker.min.js", KATEX_CSS];
 const scriptCache = {};
 function loadScript(src) {
   return scriptCache[src] ||= new Promise((ok, fail) => {
@@ -191,14 +195,18 @@ function loadScript(src) {
   });
 }
 async function need(...names) {
-  for (const n of names) for (const src of LIBS[n]) await loadScript(src);
+  for (const n of names) {
+    if (n === "katex" && !document.querySelector(`link[href="${KATEX_CSS}"]`))
+      document.head.appendChild(Object.assign(document.createElement("link"), { rel: "stylesheet", href: KATEX_CSS }));
+    for (const src of LIBS[n]) await loadScript(src);
+  }
 }
 
 /* ===================== 狀態與選項 ===================== */
 const $ = (id) => document.getElementById(id);
 const OPT_KEY = "wordios_v2_opts";
 const AI_DEFAULT = { aiUrl: "https://arcar.kftseng2oo1.workers.dev/v1/messages", aiModel: "claude-sonnet-5-5" };
-const opts = Object.assign({ images: false, notes: true, stripHF: true, pageMarks: false, autoOcr: true, forceOcr: false }, AI_DEFAULT,
+const opts = Object.assign({ images: false, notes: true, stripHF: true, pageMarks: false, autoOcr: true, forceOcr: false, hybrid: true }, AI_DEFAULT,
   (() => { try { return JSON.parse(localStorage.getItem(OPT_KEY)) || {}; } catch { return {}; } })());
 document.querySelectorAll("[data-opt]").forEach((el) => {
   const k = el.dataset.opt, isBox = el.type === "checkbox";
@@ -476,8 +484,12 @@ async function convertPdf(buf, onProgress) {
     for (const l of lines) {
       l.parts.sort((p, q) => p.x - q.x);
       let s = "", end = null;
+      l.wide = 0;
       for (const p of l.parts) {
         const gap = end == null ? 0 : p.x - end;
+        // 大間隔 = 表格欄位或多欄排版（有些 PDF 用一個很寬的空白字元填滿欄間距）
+        if (end != null && p.str.trim() && gap > p.size * 2) l.wide++;
+        else if (!p.str.trim() && p.w > p.size * 2) l.wide++;
         if (s && gap > p.size * 0.25 && !s.endsWith(" ") && !p.str.startsWith(" ")) {
           const x = s[s.length - 1], y = p.str[0];
           s += (CJK.test(x) && CJK.test(y) && gap < p.size * 1.5) ? "" : " ";
@@ -506,10 +518,10 @@ async function convertPdf(buf, onProgress) {
       if (isHF(ls[ls.length - 1], false)) { ls.pop(); if (isHF(ls[ls.length - 1], true)) ls.pop(); }
     }
   }
-  const out = [];
+  // ---- 每頁各自轉成 Markdown ----
   let chars = 0;
-  pages.forEach((ls, pi) => {
-    if (opts.pageMarks) out.push(`<!-- 第 ${pi + 1} 頁 -->`);
+  const pageMd = pages.map((ls) => {
+    const out = [];
     // 一般行距：取「內文字級相鄰行」間距的較小值
     const gaps = [];
     for (let i = 1; i < ls.length; i++) if (Math.abs(ls[i].size - body) < 0.6 && Math.abs(ls[i - 1].size - body) < 0.6) gaps.push(ls[i - 1].y - ls[i].y);
@@ -544,25 +556,97 @@ async function convertPdf(buf, onProgress) {
       para = joinText(para, l.text);
     });
     flush();
+    return out.join("\n\n");
   });
   if (chars < Math.max(20, pdf.numPages * 10)) {   // 幾乎沒文字 = 掃描檔
     if (opts.autoOcr) { const r = await ocrPdf(pdf, onProgress, "這是掃描型 PDF，已改用 AI 辨識"); cachePut(key, { ...r, scanned: true }); return r; }
     throw new Error("這份 PDF 沒有文字層（掃描圖檔）。可在選項開啟「掃描型 PDF 自動用 AI 辨識」");
   }
-  return { md: tidy(out.join("\n\n")), engine: `pdf.js · ${pdf.numPages} 頁`, warn: "PDF 版面為推測重建，多欄排版或表格可能需要手動調整" };
+
+  // ---- 混合模式：找出版面複雜的頁面（表格 / 多欄 / 公式），只把這些頁交給 AI ----
+  const N = pdf.numPages;
+  const segs = pageMd.map((t, i) => ({ a: i + 1, b: i + 1, text: t }));
+  const aiPages = [], failed = [];
+  let fromCacheCount = 0, aiCalls = 0;
+  if (opts.hybrid) {
+    const complex = pages.map((ls) => {
+      if (!ls.length) return false;
+      const wide = ls.filter((l) => l.wide >= 1).length;
+      const math = ls.reduce((n, l) => n + (l.text.match(MATH_CHARS) || []).length, 0);
+      return (wide >= 3 && wide / ls.length >= 0.2) || math >= 4;
+    });
+    // 連續的複雜頁合成一批（最多 4 頁），跨頁表格就會在同一次辨識裡接好
+    const chunks = [];
+    for (let i = 0; i < N; i++) {
+      if (!complex[i]) continue;
+      const last = chunks[chunks.length - 1];
+      if (last && last[1] === i && last[1] - last[0] + 1 < OCR_PAGES_PER_CALL) last[1] = i + 1;
+      else chunks.push([i + 1, i + 1]);
+    }
+    if (chunks.length) {
+      const range = (a, b) => (a === b ? `${a}` : `${a}–${b}`);
+      let next = 0, done = 0;
+      const total = chunks.reduce((n, [a, b]) => n + b - a + 1, 0);
+      onProgress?.(`AI 修正複雜頁面… 0/${total} 頁`);
+      const worker = async () => {
+        while (next < chunks.length) {
+          const [a, b] = chunks[next++];
+          const ck = key && `${key}|hyb|${a}-${b}`;
+          let text = null;
+          const hit = await cacheGet(ck);
+          if (hit) { text = hit.text; fromCacheCount++; }
+          else {
+            try {
+              const jpegs = [];
+              for (let i = a; i <= b; i++) jpegs.push(await pdfPageToJpeg(pdf, i));
+              const ref = pages.slice(a - 1, b).map((ls) => ls.map((l) => l.text).join("\n")).join("\n\n");
+              aiCalls++;
+              const r = await aiTranscribe(jpegs, `這是整份文件第 ${range(a, b)} 頁（共 ${N} 頁）的片段，不要加文件標題或總結`, ref);
+              text = ocrTidy(r.text);
+              if (text) cachePut(ck, { text });
+            } catch (e) { console.warn(e); failed.push(range(a, b)); }
+          }
+          if (text) {
+            for (const sg of segs) if (sg.a >= a && sg.a <= b) sg.text = "";
+            segs[a - 1] = { a, b, text };
+            aiPages.push(range(a, b));
+          }
+          done += b - a + 1;
+          onProgress?.(`AI 修正複雜頁面… ${done}/${total} 頁`);
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(OCR_CONCURRENCY, chunks.length) }, worker));
+    }
+  }
+  const joined = joinChunks(segs.filter((sg) => sg.text).map((sg) => ({
+    mark: opts.pageMarks ? `<!-- 第 ${sg.a === sg.b ? sg.a : sg.a + "–" + sg.b} 頁 -->` : "", text: sg.text })));
+  const notes = [];
+  if (aiPages.length) notes.push(`第 ${aiPages.sort((x, y) => parseInt(x) - parseInt(y)).join("、")} 頁含表格／多欄／公式，已由 AI 修正` + (fromCacheCount ? (aiCalls ? "（部分沿用快取）" : "（沿用快取，未重新計費）") : ""));
+  if (failed.length) notes.push(`第 ${failed.join("、")} 頁 AI 修正失敗，保留原始抽取`);
+  if (joined.merged) notes.push(`已接合 ${joined.merged} 處跨頁表格`);
+  if (!aiPages.length) notes.push("PDF 版面為推測重建，多欄排版或表格可能需要手動調整");
+  return {
+    md: tidy(joined.text),
+    engine: aiPages.length ? `pdf.js + Claude · ${N} 頁` : `pdf.js · ${N} 頁`,
+    warn: notes.join("；"),
+  };
 }
+
+const MATH_CHARS = /[∑∫∬∮√∞≤≥≠≈±∓∂∇∏∈∉⊂⊆⊃∪∩∀∃→⇒⇔αβγδεθλμπσφωΔΣΩ]/g;
 
 /* ===================== AI 辨識（Claude Vision，經由 arcar /v1/messages） ===================== */
 const OCR_MAX_EDGE = 1568;          // Claude 視覺的最佳解析度上限，再大也會被縮
 const OCR_PAGES_PER_CALL = 4;
-const OCR_VER = "ocr-2";            // 改提示詞時一併改版本，舊快取就不會被沿用
+const OCR_VER = "ocr-3";            // 改提示詞時一併改版本，舊快取就不會被沿用
 const OCR_CONCURRENCY = 2;
 const OCR_PROMPT = `你是精準的文件轉錄器。請把圖片中的文件內容「完整、逐字」轉成 Markdown：
 - 依視覺層級使用 # / ## / ### 標題
 - 每個段落寫成一行；不同段落、以及一行一項的欄位（例如「速別：」「附件：」）之間，一律空一行
 - 原文自己就有編號（一、 (一) 1. ① 甲、等）時照原樣保留，不要在前面再加「- 」，也不要改成 Markdown 編號清單；只有原文是項目符號（• ● ▪）時才用「- 」
 - 公文的「主旨」「說明」「辦法」「擬辦」「批示」等段名寫成「## 主旨」這樣的標題，內容放在下一段
-- 表格用 GFM 表格（| a | b |），合併儲存格就重複或留空
+- 表格用 GFM 表格（| a | b |），合併儲存格就重複或留空；表格延續到下一頁時接成同一張表，不要重複表頭
+- 數學公式用 LaTeX：獨立公式單獨一段寫成 $$ ... $$，行內公式寫成 $...$
+- 多欄排版依正確閱讀順序輸出（先左欄由上到下，再右欄）
 - 保留原文語言與用字（繁體就繁體），不要翻譯、不要摘要、不要補充說明
 - 省略頁首、頁尾、頁碼與浮水印
 - 看不清楚的字用 [?] 標示
@@ -651,7 +735,7 @@ async function pdfPageToJpeg(pdf, n) {
   page.cleanup();
   return canvasToJpeg(c);
 }
-async function aiTranscribe(jpegs, hint) {
+async function aiTranscribe(jpegs, hint, refText) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 180000);
   let res, data;
@@ -664,7 +748,8 @@ async function aiTranscribe(jpegs, hint) {
         max_tokens: 8000,
         messages: [{ role: "user", content: [
           ...jpegs.map((d) => ({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: d } })),
-          { type: "text", text: OCR_PROMPT + (hint ? "\n\n（" + hint + "）" : "") },
+          { type: "text", text: OCR_PROMPT + (hint ? "\n\n（" + hint + "）" : "")
+            + (refText ? "\n\n下面是同幾頁從 PDF 文字層抽出的原文，字元正確但順序與版面可能錯亂；請以圖片的版面為準，用它校正文字與數字：\n<<<\n" + refText.slice(0, 8000) + "\n>>>" : "") },
         ] }],
       }),
     });
@@ -680,6 +765,36 @@ async function aiTranscribe(jpegs, hint) {
   text = text.replace(/^```(?:markdown|md)?\s*\n/i, "").replace(/\n```\s*$/, "");
   return { text, truncated: data.stop_reason === "max_tokens" };
 }
+/* 把分批 / 分頁的結果接起來；前一段結尾和下一段開頭都是同欄數的表格時，接成同一張表（跨頁表格） */
+const splitCells = (row) => row.replace(/\\\|/g, "\u0000").trim().replace(/^\||\|$/g, "").split("|").map((c) => c.replace(/\u0000/g, "\\|").trim());
+const isSepRow = (r) => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(r);
+function joinChunks(parts) {
+  let out = "", merged = 0;
+  for (const p of parts) {
+    const t = (p.text || "").trim();
+    if (!t) continue;
+    const prev = out.trimEnd().split("\n");
+    const tail = [];
+    for (let i = prev.length - 1; i >= 0 && /^\s*\|/.test(prev[i]); i--) tail.unshift(prev[i]);
+    const next = t.split("\n");
+    let k = 0;
+    while (k < next.length && /^\s*\|/.test(next[k])) k++;
+    const head = next.slice(0, k);
+    if (tail.length >= 2 && head.length && splitCells(tail[0]).length === splitCells(head[0]).length) {
+      let rows = head;
+      if (head.length >= 2 && isSepRow(head[1])) {
+        const same = splitCells(head[0]).join("|") === splitCells(tail[0]).join("|");
+        rows = same ? head.slice(2) : [head[0], ...head.slice(2)];   // 表頭重複就丟掉，否則那列其實是資料
+      }
+      out = out.trimEnd() + (rows.length ? "\n" + rows.join("\n") : "") + (next.length > k ? "\n" + next.slice(k).join("\n") : "");
+      merged++;
+      continue;
+    }
+    out += (out ? "\n\n" : "") + (p.mark ? p.mark + "\n\n" : "") + t;
+  }
+  return { text: out, merged };
+}
+
 async function ocrPdf(pdf, onProgress, reason) {
   const N = pdf.numPages, chunks = [];
   for (let a = 1; a <= N; a += OCR_PAGES_PER_CALL) chunks.push([a, Math.min(N, a + OCR_PAGES_PER_CALL - 1)]);
@@ -698,13 +813,10 @@ async function ocrPdf(pdf, onProgress, reason) {
     }
   };
   await Promise.all(Array.from({ length: Math.min(OCR_CONCURRENCY, chunks.length) }, worker));
-  const out = [];
-  chunks.forEach(([a, b], i) => {
-    if (opts.pageMarks) out.push(`<!-- 第 ${range(a, b)} 頁 -->`);
-    out.push(ocrTidy(results[i].text));
-  });
+  const joined = joinChunks(chunks.map(([a, b], i) => ({
+    mark: opts.pageMarks ? `<!-- 第 ${range(a, b)} 頁 -->` : "", text: ocrTidy(results[i].text) })));
   return {
-    md: tidy(out.join("\n\n")), engine: `Claude OCR · ${N} 頁`,
+    md: tidy(joined.text), engine: `Claude OCR · ${N} 頁`,
     warn: (reason ? reason + "；" : "") + "AI 辨識結果請核對數字與專有名詞" + (truncated ? "；部分頁面內容太多可能被截斷" : ""),
   };
 }
@@ -795,7 +907,21 @@ async function renderPreview() {
   preview.textContent = "載入預覽…";
   try {
     await need("marked");
-    preview.innerHTML = DOMPurify.sanitize(marked.parse(editor.value, { gfm: true, breaks: false }));
+    // 先把 $$…$$ / $…$ 公式換成記號，避免被 Markdown 誤解析；程式碼區塊內不處理
+    const maths = [];
+    const tok = (tex, display) => { maths.push({ tex, display }); return `KXMATH${maths.length - 1}KX`; };
+    const src = editor.value.split(/(```[\s\S]*?```|`[^`\n]+`)/).map((part, i) => i % 2 ? part : part
+      .replace(/\$\$([\s\S]+?)\$\$/g, (_, t) => "\n\n" + tok(t.trim(), true) + "\n\n")
+      .replace(/\$([^\s$](?:[^$\n]*[^\s$])?)\$(?!\d)/g, (_, t) => tok(t, false))).join("");
+    let html = DOMPurify.sanitize(marked.parse(src, { gfm: true, breaks: false }));
+    if (maths.length) {
+      try { await need("katex"); } catch {}
+      const render = (m) => window.katex
+        ? katex.renderToString(m.tex, { displayMode: m.display, throwOnError: false, output: "htmlAndMathml" })
+        : (m.display ? "$$" + m.tex + "$$" : "$" + m.tex + "$").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+      html = html.replace(/<p>KXMATH(\d+)KX<\/p>/g, (_, i) => render(maths[+i])).replace(/KXMATH(\d+)KX/g, (_, i) => render(maths[+i]));
+    }
+    preview.innerHTML = html;
   } catch (e) { preview.textContent = e.message; }
 }
 function setMode(m) {

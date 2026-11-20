@@ -1,4 +1,4 @@
-# WordiOS v2.3 · 文件轉 Markdown
+# WordiOS v2.4 · 文件轉 Markdown
 
 在 iPhone / 瀏覽器上把 Word、Excel、PPT、PDF 轉成乾淨的 Markdown。
 一般轉檔**全部在瀏覽器端處理，檔案不會上傳**；只有掃描檔、照片才會經由 arcar Worker 送給 Claude 做 AI 辨識。
@@ -10,7 +10,7 @@
 | .docx | mammoth.js + turndown | 標題、粗斜體、清單、表格（含儲存格換行）、可選保留圖片 |
 | .xlsx / .xls / .xlsm / .ods / .csv | SheetJS | 每個工作表一個表格，自動去除空列空欄；CSV 自動判斷 UTF-8 / Big5 |
 | .pptx | 自寫 OOXML 解析（JSZip） | 依實際投影片順序、標題、多層項目符號、表格、講者備註 |
-| .pdf | pdf.js | 依字級判斷標題、依行距合併段落、移除重複頁首頁尾、修正康熙部首字 |
+| .pdf | pdf.js ＋ Claude 混合模式 | 依字級判斷標題、依行距合併段落、移除重複頁首頁尾、修正康熙部首字；含表格／多欄／公式的頁面自動交給 AI 修正（附文字層原文校正），跨頁表格自動接合，公式輸出 LaTeX、預覽用 KaTeX |
 | .html / .txt / .md | turndown / 直接讀取 | |
 | 掃描型 PDF / 文件照片（jpg・png・heic） | Claude Vision（arcar `/v1/messages`） | 頁面在手機上畫成 1568px JPEG，每 4 頁一批、同時送 2 批；結果存在 IndexedDB，同檔案不重複計費 |
 | 剪貼簿 | turndown | 從 Word、Pages、網頁複製後按「貼上轉換」 |
